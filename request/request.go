@@ -14,16 +14,6 @@ import (
 	"github.com/wesleyholiveira/caesar-challenge/writer"
 )
 
-type Requester interface {
-	Get(url string) (*http.Response, error)
-	Post(url, contentType string, body *bytes.Buffer) (*http.Response, error)
-}
-
-type FileHandler interface {
-	Open(string) (*os.File, error)
-	Stat(name string) (os.FileInfo, error)
-}
-
 // ChallengeResponse struct deals with the http response
 type ChallengeResponse struct {
 	Places        int    `json:"numero_casas"`
@@ -33,14 +23,10 @@ type ChallengeResponse struct {
 	SummaryCrypto string `json:"resumo_criptografico"`
 }
 
-// GetCryptedText sends request to codenation and return a struct with the json parsed
-func GetCryptedText(requester Requester, fileHandler FileHandler, file string) (*writer.WriterAnswer, error) {
-	w := writer.New()
-	url := fmt.Sprintf("%s?token=%s", config.GenerateUrl, config.TokenCodeNation)
+func getRequest(url string) ([]byte, error) {
 	log.Printf("Making request to %s", url)
 
-	response := &ChallengeResponse{}
-	resp, err := requester.Get(url)
+	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +37,30 @@ func GetCryptedText(requester Requester, fileHandler FileHandler, file string) (
 		return nil, err
 	}
 
-	err = json.Unmarshal(body, response)
+	return body, nil
+}
+
+func parseResponse(body []byte) (*ChallengeResponse, error) {
+	response := &ChallengeResponse{}
+	err := json.Unmarshal(body, response)
+	if err != nil {
+		return nil, err
+	}
+
+	return response, nil
+}
+
+// GetCryptedText sends request to codenation and return a struct with the json parsed
+func GetCryptedText(file string, getRequest func(string) ([]byte, error), parseResponse func([]byte) (*ChallengeResponse, error)) (*writer.WriterAnswer, error) {
+	w := writer.New()
+	url := fmt.Sprintf("%s?token=%s", config.GenerateUrl, config.TokenCodeNation)
+
+	body, err := getRequest(url)
+	if err != nil {
+		return nil, err
+	}
+
+	response, err := parseResponse(body)
 	if err != nil {
 		return nil, err
 	}
@@ -59,16 +68,33 @@ func GetCryptedText(requester Requester, fileHandler FileHandler, file string) (
 	w.File = file
 	w.Response = response
 	w.Data = body
-	writer.WriteAnswer(w, fileHandler)
+	writer.WriteAnswer(w)
 
 	return w, nil
 }
 
-func PostSubmitData(requester Requester, fileHandler FileHandler, file string) ([]byte, error) {
-	url := fmt.Sprintf("%s?token=%s", config.SubmitUrl, config.TokenCodeNation)
+func postRequest(url string, body *bytes.Buffer) ([]byte, error) {
 	log.Printf("Making request to %s", url)
 
-	r, err := reader.ReadAnswer(fileHandler, file)
+	resp, err := http.Post(url, "multipart/form-data", body)
+	if err != nil {
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+	respBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return respBody, nil
+}
+
+// PostSubmitData sends a POST request to submit the data
+func PostSubmitData(file string, postRequest func(string, *bytes.Buffer) ([]byte, error)) ([]byte, error) {
+	url := fmt.Sprintf("%s?token=%s", config.SubmitUrl, config.TokenCodeNation)
+
+	r, err := reader.ReadAnswer(file)
 	if err != nil {
 		return nil, err
 	}
@@ -88,14 +114,7 @@ func PostSubmitData(requester Requester, fileHandler FileHandler, file string) (
 		return nil, err
 	}
 
-	fmt.Println(body.String())
-	resp, err := requester.Post(url, writer.FormDataContentType(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	defer resp.Body.Close()
-	respBody, err := ioutil.ReadAll(resp.Body)
+	respBody, err := postRequest(url, body)
 	if err != nil {
 		return nil, err
 	}
