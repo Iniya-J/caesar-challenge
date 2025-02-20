@@ -1,5 +1,4 @@
-Here is the unit test code based on the given "Source_code", "Explanation" and "Test_Scenarios":
-
+{insert imports as needed}
 ```go
 package crypto
 
@@ -14,98 +13,45 @@ import (
 )
 
 func TestDecrypt(t *testing.T) {
-	tests := []struct {
-		name          string
-		cryptedText   string
-		places        int
-		expectedText  string
-		expectedHash  string
+	testCases := []struct {
+		name           string
+		cryptedText    string
+		places         int
+		expectedText   string
+		expectedSHA1   string
 	}{
-		{"Normal text input", "bcdef", 1, "abcde", fmt.Sprintf("%x", sha1.Sum([]byte("abcde")))},
-		{"Text with spaces and periods", "b c.d e.f", 1, "a b.c d.e", fmt.Sprintf("%x", sha1.Sum([]byte("a b.c d.e")))},
-		{"Text with numbers", "b2c3d4", 1, "a2b3c4", fmt.Sprintf("%x", sha1.Sum([]byte("a2b3c4")))},
-		{"Text with uppercase letters", "BCD", 1, "abc", fmt.Sprintf("%x", sha1.Sum([]byte("abc")))},
-		{"Empty text", "", 1, "", fmt.Sprintf("%x", sha1.Sum([]byte("")))},
-		{"Edge case with shift of 0", "abc", 0, "abc", fmt.Sprintf("%x", sha1.Sum([]byte("abc")))},
-		{"Edge case with shift of 27", "abc", 27, "zab", fmt.Sprintf("%x", sha1.Sum([]byte("zab")))},
-		{"Negative shift values", "abc", -1, "bcd", fmt.Sprintf("%x", sha1.Sum([]byte("bcd")))},
-		{"Non-ASCII characters", "abç", 1, "zaç", fmt.Sprintf("%x", sha1.Sum([]byte("zaç")))},
-		{"Special characters", "a@b#c$d", 1, "z@b#c$d", fmt.Sprintf("%x", sha1.Sum([]byte("z@b#c$d")))},
+		{"Normal Case", "bcd", 1, "abc", "a9993e364706816aba3e25717850c26c9cd0d89d"},
+		{"Edge Case - Empty String", "", 1, "", "5ba93c9db0cff93f52b521d7420e43f6eda2784f"},
+		{"Edge Case - Spaces and Punctuation", "bcd efg.", 1, "abc def.", "03cfd743661f07975fa2f1220c5194cbaff48451"},
+		{"Edge Case - Numbers", "bcd123", 1, "abc123", "6367c48dd193d56ea7b0baad25b19455e529f5ee"},
+		{"Edge Case - Large Shift", "abc", 25, "bcd", "3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d"},
+		{"Edge Case - Case Sensitivity", "BCD", 1, "abc", "a9993e364706816aba3e25717850c26c9cd0d89d"},
+		{"Edge Case - Non-Alphabetic Characters", "bcd!@#", 1, "abc!@#", "3c01bdbb26f358bab27f267924aa2c9a03fcfdb8"},
+		{"Edge Case - Negative Shift", "abc", -1, "bcd", "3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d"},
+		{"Edge Case - Zero Shift", "abc", 0, "abc", "a9993e364706816aba3e25717850c26c9cd0d89d"},
+		{"Edge Case - Non-ASCII Characters", "abc£€¥", 1, "abc£€¥", "9e0e6f57b0752f714f52464a72b3e8a50b93b3ba"},
+		{"Edge Case - Very Long Text", strings.Repeat("a", 1000000), 1, strings.Repeat("z", 1000000), "5c8b2a63c65d20f0c16c1b682c1415a91e47b0df"},
+		{"Edge Case - Special Characters", "abc\n", 1, "abc\n", "3c363836cf4e16666669a25da280a1865c2d2874"},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := &request.ChallengeResponse{
-				CryptedText: tt.cryptedText,
-				Places:      tt.places,
-			}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
 			w := &writer.WriterAnswer{
-				Response: r,
+				Response: &request.ChallengeResponse{
+					CryptedText: tc.cryptedText,
+					Places:      tc.places,
+				},
 			}
-
 			Decrypt(w)
-
-			if w.Response.(*request.ChallengeResponse).DecryptedText != tt.expectedText {
-				t.Errorf("Expected decrypted text to be %s, but got %s", tt.expectedText, w.Response.(*request.ChallengeResponse).DecryptedText)
+			r := w.Response.(*request.ChallengeResponse)
+			if r.DecryptedText != tc.expectedText {
+				t.Errorf("expected decrypted text to be %s, but got %s", tc.expectedText, r.DecryptedText)
 			}
-
-			if w.Response.(*request.ChallengeResponse).SummaryCrypto != tt.expectedHash {
-				t.Errorf("Expected summary crypto to be %s, but got %s", tt.expectedHash, w.Response.(*request.ChallengeResponse).SummaryCrypto)
+			if r.SummaryCrypto != tc.expectedSHA1 {
+				t.Errorf("expected SHA1 hash to be %s, but got %s", tc.expectedSHA1, r.SummaryCrypto)
 			}
 		})
 	}
 }
-
-func TestDecryptWithVeryLongText(t *testing.T) {
-	longText := strings.Repeat("b", 1000000)
-	decryptedText := strings.Repeat("a", 1000000)
-
-	r := &request.ChallengeResponse{
-		CryptedText: longText,
-		Places:      1,
-	}
-	w := &writer.WriterAnswer{
-		Response: r,
-	}
-
-	Decrypt(w)
-
-	if w.Response.(*request.ChallengeResponse).DecryptedText != decryptedText {
-		t.Errorf("Expected decrypted text to be %s, but got %s", decryptedText, w.Response.(*request.ChallengeResponse).DecryptedText)
-	}
-}
-
-func TestDecryptWithVeryLargeShiftValues(t *testing.T) {
-	r := &request.ChallengeResponse{
-		CryptedText: "abc",
-		Places:      1000000,
-	}
-	w := &writer.WriterAnswer{
-		Response: r,
-	}
-
-	Decrypt(w)
-
-	if w.Response.(*request.ChallengeResponse).DecryptedText != "abc" {
-		t.Errorf("Expected decrypted text to be abc, but got %s", w.Response.(*request.ChallengeResponse).DecryptedText)
-	}
-}
-
-func TestDecryptWithNullInput(t *testing.T) {
-	r := &request.ChallengeResponse{
-		CryptedText: "",
-		Places:      1,
-	}
-	w := &writer.WriterAnswer{
-		Response: r,
-	}
-
-	Decrypt(w)
-
-	if w.Response.(*request.ChallengeResponse).DecryptedText != "" {
-		t.Errorf("Expected decrypted text to be empty, but got %s", w.Response.(*request.ChallengeResponse).DecryptedText)
-	}
-}
 ```
-
-This test suite covers all the scenarios provided in the "Test_Scenarios". It tests the `Decrypt` function with normal text input, text with spaces and periods, text with numbers, text with uppercase letters, empty text, edge cases, negative shift values, non-ASCII characters, special characters, very long text, very large shift values, and null input. Each test checks that the decrypted text and the SHA-1 hash of the decrypted text are as expected.
+{insert unit test code here}
